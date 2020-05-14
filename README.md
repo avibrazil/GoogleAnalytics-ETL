@@ -179,31 +179,37 @@ For example, GA time precision is as bad as 1 minute. So in one single minute yo
 
 To overcome this limitations, create the following custom dimensions in your GA. This is not valid code but just algorithmic ideas that must be executed in the user's browser:
 
-* **ClientID** ([reference](https://stackoverflow.com/a/20054201/367824))
+### ClientID
+([reference](https://stackoverflow.com/a/20054201/367824))
 ```javascript
 ClientID = ga.clientID
 ```
 
-* **UserID** - Maybe you'll want `UserID` to be simply your `BusinessUserID`, or maybe you want to differentiate same user across different devices. I prefer second option.
+### UserID
+Maybe you'll want `UserID` to be simply your `BusinessUserID`, or maybe you want to differentiate same user across different devices. I prefer second option.
 ```javascript
 UserID = hash(BusinessUserID + ClientID)
 ```
-* **SessionID**
+### SessionID
 ```javascript
 if (user_just_logged_in == true) {
     SessionID = hash(UserID + Date.now());
     ga.setNewSession()
 }
 ```
-* **SequenceID** - This is any sequential number that will give us a clue about sequence of actions user did.
+
+### SequenceID
+This is just a sequential number, doesn't have to be a unique identifier as the others, thats why its just browser's time as an integer. But compound key `(SessionID, SequenceID)` is globaly unique.
+
 ```javascript
 SequenceID = Date.now()    /* milliseconds resolution */
 ```
-* **HitID** - Something to identify uniquelly and globally a single user action
+### HitID
+Something to identify uniquelly and globaly a single user action
 ```javascript
 HitID = hash(SessionID + Date.now())
 ```
 
-The `hash()` function in my example is anything in the user browser capable of generating a unique hex digest. You may want to use as this function the [SHA-256 impementation of `SubtleCrypto.digest()`](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest) available on most modern browsers. SHA-3 or SHAKE would be smaller and more efficient, but only SHA-256 is apparently widely implemented right now.
+The `hash()` function in my examples is anything in the user browser capable of generating a unique hex digest. You may want to use [SHA-256 impementation of `SubtleCrypto.digest()`](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest) available on most modern browsers. SHA-3 or SHAKE would be smaller and more efficient, but only SHA-256 is apparently widely implemented right now.
 
 Wherever you go here, do not use SHA-1.
