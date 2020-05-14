@@ -5,14 +5,14 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="GoogleAnalyticsETL",
-    version="0.5.0",
+    version="0.5.5",
     author="Avi Alkalay",
     author_email="avibrazil@gmail.com",
-    description="Ingest a set of Google Analytics dimensions and put the data into a SQL database; can be run regularly to sync updates to DB",
+    description="Ingest a set of Google Analytics dimensions and put the data into a SQL database; can be run regularly to sync updates incrementally to DB",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/avibrazil/GoogleAnalytics-ETL",
-    install_requires=['sqlalchemy','pandas','oauth2client','apiclient','dateutil','queue','threading','json'],
+    install_requires=['sqlalchemy','pandas','oauth2client','google-api-python-client','python-dateutil'],
     data_files=[('share/GoogleAnalyticsETL/examples',['examples/GABradescoSegurosToDB.py', 'examples/etl-by-email.py','examples/etl.py','examples/sources.conf.example'])],
     packages=setuptools.find_packages(),
     classifiers=[
