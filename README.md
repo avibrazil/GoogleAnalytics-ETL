@@ -1,8 +1,8 @@
 # Google Analytics ETL
 
-A python base class to extract and continuously sync data from Google Analytics, and write it to a SQL database.
+A Python base class to extract and continuously sync data from Google Analytics, and write it to a SQL database.
 
-Uses Analytics Reporting API v4 and it works similarly to Goole Analytics Custom Reports where you define a list of dimensions to be displayed in a flat table. But doesn't have the limitations of GA's UI. In addition, data can be custom transformed and will be written to a SQL database.
+Uses [Analytics Reporting API v4](https://developers.google.com/analytics/devguides/reporting/core/v4) and it works similarly to Goole Analytics Custom Reports where you define a list of dimensions to be displayed in a flat table. But doesn't have the limitations of GA's UI. In addition, data can be custom transformed and will be written to a SQL database.
 
 ## Installation
 
@@ -24,6 +24,8 @@ pip3 install mysqlclient --user
 This MariaDB connector is the one that works with SQLAlchemy (used by the module). Other connectors as PyMySQL failed our tests.
 
 If you chose to installing `mysqlclient` with `pip`, you'll require compilers and MariaDB development framework pre-installed in the system, as shown in the Red Hat Enterprise Linux section. But avoid doing it like that and use your OS's pre-compiled packages as shown above.
+
+With SQLAlchemy, you can use other backend database systems such as DB2, Oracle, PostgreSQL, SQLite. Just make sure you have the correct SQLAlchemy driver installed.
 
 ### Install the module
 
@@ -161,7 +163,13 @@ This is a list of 5 dimensions that will result in 6 SQL columns. This example w
 * `transformspawncolumns` - Tells the class and this specific transform function of this example that this dimension must be split into new columns with these names (2 in this case).
 * `transformparams` - An object with information relevant to the `trnsform` function.
 
-### Run regularly with CRON
+### 9. Use a GA View configured with UTC timezone
+
+To avoid time inconsistencies, the module always converts and stores time as UTC in the database. But GA documentation is unclear about how they handle time in days entering and leaving Daylight Savings Time.
+
+So a bet practice is to create a View configured to UTC as timezone, this way time is ensured to be always linear. Not to mention that no timezone conversion will be needed.
+
+### 10. Run regularly with CRON
 
 Once configured, easiest way to use it is with a crontab. I have this on my crontab:
 
@@ -171,26 +179,26 @@ Once configured, easiest way to use it is with a crontab. I have this on my cron
 
 Which will run a sync every 2 hours plus 30 minutes. Change it to `@hourly` to get more recent updates.
 
-## Prepare GA for optimal ETLs
+## Prepare Google Analytics for optimal ETLs
 
 Google Analytics as a UI uses some private unaccessible data to make all its data meaningful. In the API or custom reports level we don't have some very important control data to glue together all dimensions that we can extract.
 
 For example, GA time precision is as bad as 1 minute. So in one single minute you may have many different actions from one single user and you won't even know in which order the user did it. Other limitations are lack of information about session ID, client ID and user ID, all things that help uniquely identify a hit.
 
-To overcome this limitations, create the following custom dimensions in your GA. This is not valid code but just algorithmic ideas that must be executed in the user's browser:
+To overcome this limitations, create the following custom dimensions in your GA. The code below is just algorithmic ideas that must be executed in the user's browser, you'll have to convert it to real code. For example, the `hash()` function in my examples is anything in the user browser capable of generating a unique {hex|base64|b85} digest. You may want to use [SHA-256 impementation of `SubtleCrypto.digest()`](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest) available on most modern browsers. SHA-3 or SHAKE would be smaller and more efficient, but only SHA-256 is apparently widely implemented right now. And wherever you go here, do not use SHA-1.
 
-### ClientID
+### Custom dimension `ClientID`
 ([reference](https://stackoverflow.com/a/20054201/367824))
 ```javascript
 ClientID = ga.clientID
 ```
 
-### UserID
+### Custom dimension `UserID`
 Maybe you'll want `UserID` to be simply your `BusinessUserID`, or maybe you want to differentiate same user across different devices. I prefer second option.
 ```javascript
 UserID = hash(BusinessUserID + ClientID)
 ```
-### SessionID
+### Custom dimension `SessionID`
 ```javascript
 if (user_just_logged_in == true) {
     SessionID = hash(UserID + Date.now());
@@ -198,18 +206,15 @@ if (user_just_logged_in == true) {
 }
 ```
 
-### SequenceID
+### Custom dimension `SequenceID`
 This is just a sequential number, doesn't have to be a unique identifier as the others, thats why its just browser's time as an integer. But compound key `(SessionID, SequenceID)` is globaly unique.
 
 ```javascript
 SequenceID = Date.now()    /* milliseconds resolution */
 ```
-### HitID
+
+### Custom dimension `HitID`
 Something to identify uniquelly and globaly a single user action
 ```javascript
 HitID = hash(SessionID + Date.now())
 ```
-
-The `hash()` function in my examples is anything in the user browser capable of generating a unique hex digest. You may want to use [SHA-256 impementation of `SubtleCrypto.digest()`](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/digest) available on most modern browsers. SHA-3 or SHAKE would be smaller and more efficient, but only SHA-256 is apparently widely implemented right now.
-
-Wherever you go here, do not use SHA-1.
