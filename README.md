@@ -167,7 +167,7 @@ This is a list of 5 dimensions that will result in 6 SQL columns. This example w
 
 To avoid time inconsistencies, the module always converts and stores time as UTC in the database. But GA documentation is unclear about how they handle time in days entering and leaving Daylight Savings Time.
 
-So a bet practice is to create a View configured to UTC as timezone, this way time is ensured to be always linear. Not to mention that no timezone conversion will be needed.
+So the best practice here is to create a View configured with UTC as its timezone. This way time is ensured to be always linear. Not to mention that no timezone conversion will be needed.
 
 ### 10. Run regularly with CRON
 
