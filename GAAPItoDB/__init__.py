@@ -24,6 +24,7 @@ import time
 import json
 import queue
 import threading
+import gc # Garbage Collector
 
 
 module_logger = logging.getLogger(__name__)
@@ -521,6 +522,12 @@ class GAAPItoDB(object):
                     if pageiteration>0:
                         query['pageToken'] = nextPageToken
 
+                    try:
+                        # Free big objects in RAM
+                        del report
+                    except NameError:
+                        pass
+                        
                     report = self.callGA(
                         body={
                             'reportRequests': [query],
@@ -574,15 +581,23 @@ class GAAPItoDB(object):
                     columns=self.dimensionItemsToList('title', filter=subreports[i]),
                     data=result
                 ))
-                self.logger.debug("Subreport shape size is {}×{}".format(self.subreports[-1].shape[0],self.subreports[-1].shape[1]))
+                self.logger.debug("Subreport shape size is {}×{}".format(
+                    self.subreports[-1].shape[0],
+                    self.subreports[-1].shape[1])
+                )
 
                 # Calculate a wanna-be-unique hash for each line based on key columns/dimensions
                 keys=self.getReportKeys()
                 self.subreports[-1] = GAAPItoDB.makePrimaryKey(self.subreports[-1],keys)
 
+
+#                 buffer = io.StringIO()
+#                 self.subreports[-1].info(verbose=True, buf=buffer)
+#                 self.logger.debug("Subreport memory profile:\n{}".format(buffer.getvalue()))
                 
                 # Free some RAM
                 del result
+                
 
                 # At this point all pages of a subreport inside a time partition were read and stored in a subreport DataFrame.
                 # Continue to next subreport for same time partition.
@@ -607,10 +622,31 @@ class GAAPItoDB(object):
                                 sort=False
                     )
 
-                # Coalesce values of key columns
-                for k in keys:
-                    for i in range(1, len(self.subreports)):
+                    # Coalesce values of key columns so the non-“__{i}” ones will have the data
+                    for k in keys:
                         self.report[k]=self.report[k].combine_first(self.report[f'{k}__{i}'])
+                    
+                    # Delete overlapping columns
+                    cols=self.report.columns
+                    todrop=[]
+                    for c in cols:
+                        if f"__{i}" in c:
+                            todrop.append(c)
+                    self.report.drop(todrop, axis=1, inplace=True)
+#                     del cols, todrop, c
+                    
+                    # Delete dataframe that was already joined and merged into self.report
+                    destroyer=self.subreports[i]
+                    self.subreports[i]=None
+                    del destroyer
+                    
+                    # Force garbage collector
+                    gc.collect()
+                    
+                    buffer = io.StringIO()
+                    self.report.info(verbose=True, buf=buffer)
+                    self.logger.debug("Report memory profile so far:\n{}".format(buffer.getvalue()))
+                    
 
 
 
