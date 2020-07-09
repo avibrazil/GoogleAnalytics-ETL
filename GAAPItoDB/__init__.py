@@ -45,6 +45,7 @@ class GAAPItoDB(object):
                         apiQuota=0,
                         metrics=None,
                         dateRangePartitionSize=None,  # in days
+                        dbWritePartitions=None,
                         emptyRows=True,
                         dbURL=None,
                         targetTable=None,
@@ -78,6 +79,7 @@ class GAAPItoDB(object):
         self.dbURL=dbURL
         self.targetTable=targetTable
         self.dateRangePartitionSize=dateRangePartitionSize
+        self.dbWritePartitions=dbWritePartitions
         self.quotaControl={}
         self.restart=restart
         self.update=update
@@ -684,6 +686,12 @@ class GAAPItoDB(object):
                             self.report = d['transform'](self.report,d)
 
 
+                    # Sort report by dimension that has synccursor=True
+                    for k in self.dimensions:
+                        if 'synccursor' in k and k['synccursor']==True:
+                            break
+                    self.report.sort_values(by=k['title'], inplace=True)
+
 
                     # Calculate unique IDs for rows
                     self.logger.debug("Generate wanna-be unique IDs for rows...")
@@ -697,8 +705,9 @@ class GAAPItoDB(object):
 
 
                 # Clean the way for more data
+                destroyer = self.report
                 self.report = None
-#                 del self.subreports[:]
+                del destroyer
                 self.subreports.clear()
             
         
@@ -787,9 +796,9 @@ class GAAPItoDB(object):
     
     def writeDB(self, rawReport):
         report=rawReport[self.getFinalReportColumns()]
+        timeColName=None
         
-        
-        # For debug purposes, get name of column used as sync parameter
+        # Get name of column used as sync parameter
         for d in self.dimensions:
             if 'synccursor' in d and d['synccursor']:
                 timeColName=d['title']
@@ -808,22 +817,68 @@ class GAAPItoDB(object):
             ifexists='append'
         
         if self.update:
-            # Use pandas.to_sql() to add final report lines to the database table
-            report.reset_index().to_sql(
-                self.targetTable,
-                if_exists=ifexists,
-                index=False,
-                con=self.db
-            )
+            if self.dbWritePartitions and timeColName:
+                partitions=list(report[timeColName].value_counts(bins=self.dbWritePartitions).index.sort_values())
+                for interval in partitions:
+                    if interval.closed_left:
+                        filter = report[timeColName] >= interval.left
+                    else:
+                        filter = report[timeColName] > interval.left
+
+                    if interval.closed_right:
+                        filter &= report[timeColName] <= interval.right
+                    else:
+                        filter &= report[timeColName] < interval.right
+                    
+                    try:
+                        report[filter].reset_index().to_sql(
+                            self.targetTable,
+                            if_exists=ifexists,
+                            index=False,
+                            con=self.db
+                        )
+                    except sqlalchemy.exc.OperationalError as e:
+                        targetFile='bad file for interval {}→{}.csv'.format(interval.left,interval.right)
+                        self.logger.error('Failed to write data partition to DB. Dumping data to CSV for you to check')
+                        report[filter].reset_index().to_csv(targetFile)
+                        self.logger.exception(e)
+                        os._exit(os.EX_DATAERR)
+                    
+                    self.logger.debug('Wrote ({}) {} datapoints of {} columns, ranging from {} to {}'.format(
+                            ifexists,
+                            report[filter].shape[0],
+                            report[filter].shape[1],
+                            report[filter][timeColName].min(),
+                            report[filter][timeColName].max()
+                        )
+                    )
+
+                    
+            else:
+                # Writing in one block, no partitioning (dangerous, may be too much information to your DB)
+                # Use pandas.to_sql() to add final report lines to the database table
+                try:
+                    report.reset_index().to_sql(
+                        self.targetTable,
+                        if_exists=ifexists,
+                        index=False,
+                        con=self.db
+                    )
+                except sqlalchemy.exc.OperationalError as e:
+                    targetFile='bad file for interval {}→{}.csv'.format(report[timeColName].min(),report[timeColName].max())
+                    self.logger.error('Failed to write data to DB. Dumping data to CSV for you to check')
+                    report.reset_index().to_csv(targetFile)
+                    self.logger.exception(e)
+                    os._exit(os.EX_DATAERR)
             
-            self.logger.debug('Wrote ({}) {} datapoints of {} columns, ranging from {} to {}'.format(
-                    ifexists,
-                    report.shape[0],
-                    report.shape[1],
-                    report[timeColName].min(),
-                    report[timeColName].max()
+                self.logger.debug('Wrote ({}) {} datapoints of {} columns, ranging from {} to {}'.format(
+                        ifexists,
+                        report.shape[0],
+                        report.shape[1],
+                        report[timeColName].min(),
+                        report[timeColName].max()
+                    )
                 )
-            )
         else:
             self.logger.warning('Didn’t write ({}) {} datapoints of {} columns, ranging from {} to {}'.format(
                     ifexists,
@@ -860,9 +915,6 @@ class GAAPItoDB(object):
         self.logger.debug('End of DB writing thread.')
 
                 
-            
-    
-
     def sync(self):
         self.connectDB()
         self.effectiveStartDate()   # Sets self.effectiveStart
@@ -877,4 +929,22 @@ class GAAPItoDB(object):
         # Block until there is nothing on the queue
         if not self.dbWriteQueue.empty():
             self.dbWriteQueue.join()
+
+
+    def TransformRegexReplace(self,df,dimension):
+        if 'keeporiginal' in dimension:
+            # Keep original data in a new column with suffix "__org"
+            orgname = dimension['title'] + "__org"
+            df[orgname] = df[dimension['title']]
+
+        self.logger.debug(f"TransformRegexReplace: transforming {dimension['title']}")
+        try:
+            df[dimension['title']]=df[[dimension['title']]].replace(regex=dimension['transformparams'])
+        except Exception as e:
+            self.logger.exception("TransformRegexReplace: unrecoverable error in custom transformation: " + e)
+            os._exit(os.EX_DATAERR)
+
+        self.logger.debug(f"TransformRegexReplace: end of custom transformation.")
+        return df
+    
 
