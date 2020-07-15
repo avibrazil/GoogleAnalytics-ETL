@@ -41,6 +41,7 @@ class GABradescoSegurosToDB(GAAPItoDB):
                         apiQuota=0,
                         metrics=None,
                         dateRangePartitionSize=None,  # in days
+						dbWritePartitions=None,
                         emptyRows=True,
                         dbURL=None,
                         targetTable=None,
@@ -62,6 +63,7 @@ class GABradescoSegurosToDB(GAAPItoDB):
             apiQuota=apiQuota,
             metrics=metrics,
             dateRangePartitionSize=dateRangePartitionSize,  # in days
+			dbWritePartitions=dbWritePartitions,
             emptyRows=emptyRows,
             dbURL=dbURL,
             targetTable=targetTable,
@@ -136,44 +138,6 @@ class GABradescoSegurosToDB(GAAPItoDB):
 
 
 
-    def BSNullifyStrings(self, df, dimension):
-        if 'keeporiginal' in dimension:
-            # Keep original data in a new column with suffix "__org"
-            orgname = dimension['title'] + "__org"
-            df[orgname] = df[dimension['title']]
-
-        for s in dimension['transformparams']['nullify']:
-            self.logger.debug(f"BSNullifyStrings: nullifying «{s}» on {dimension['title']}")
-            try:
-                df[dimension['title']]=df[[dimension['title']]].replace(s, np.nan)
-            except Exception as e:
-                self.logger.error("BSExplodeAndSplit: unrecoverable error in custom transformation: " + e)
-                os._exit(1)    
-
-        self.logger.debug(f"BSNullifyStrings: end of custom transformation.")
-        return df
-    
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -195,6 +159,7 @@ class GABradescoSegurosParcelasAtrasadasClicadasToDB(GABradescoSegurosToDB):
                         apiQuota=0,
                         metrics=None,
                         dateRangePartitionSize=None,  # in days
+						dbWritePartitions=None,
                         emptyRows=True,
                         dbURL=None,
                         targetTable=None,
@@ -215,7 +180,37 @@ class GABradescoSegurosParcelasAtrasadasClicadasToDB(GABradescoSegurosToDB):
                 'keeporiginal': True
             },
     
+            # Operational and data join
+            
+            {
+                'title': 'hit_id',
+                'name': 'ga:dimension22',
+                'key': True
+            },
     
+            {
+                'title': 'session_id',
+                'name': 'ga:dimension21',
+                'key': True
+            },
+
+            {
+                'title': 'client_id',
+                'name': 'ga:dimension23',
+                'key': True
+            },
+
+            {
+                'title': 'user_id',
+                'name': 'ga:dimension24',
+                'key': True
+            },
+
+            {
+                'title': 'sequence_id',
+                'name': 'ga:dimension25',
+                'key': True
+            },    
     
             # Sucursal e Apólice
     
@@ -268,33 +263,37 @@ class GABradescoSegurosParcelasAtrasadasClicadasToDB(GABradescoSegurosToDB):
             {
                 'title': 'corretor_cpfcnpj_session_zeropad_sha256',
                 'name': 'ga:dimension20',
-                'transform': self.BSNullifyStrings, # (report, this_dimension)
+                'transform': self.TransformRegexReplace, # (report, this_dimension)
                 'transformparams': {
-                    'nullify': ['Cookie não definido']
+                	# Get rid of useless strings, replace text by NULL
+                    'Cookie não definido': None
                 },
             },
             {
                 'title': 'corretor_cpfcnpj_session_sha256',
                 'name': 'ga:dimension17',
-                'transform': self.BSNullifyStrings, # (report, this_dimension)
+                'transform': self.TransformRegexReplace, # (report, this_dimension)
                 'transformparams': {
-                    'nullify': ['Cookie não definido']
-                },        
+                	# Get rid of useless strings, replace text by NULL
+                    'Cookie não definido': None
+                },
             },
             {
                 'title': 'corretor_cpfcnpj_hit_zeropad_sha256',
                 'name': 'ga:dimension19',
-                'transform': self.BSNullifyStrings, # (report, this_dimension)
+                'transform': self.TransformRegexReplace, # (report, this_dimension)
                 'transformparams': {
-                    'nullify': ['Cookie não definido']
+                	# Get rid of useless strings, replace text by NULL
+                    'Cookie não definido': None
                 },
             },
             {
                 'title': 'corretor_cpfcnpj_hit_sha256',
                 'name': 'ga:dimension15',
-                'transform': self.BSNullifyStrings, # (report, this_dimension)
+                'transform': self.TransformRegexReplace, # (report, this_dimension)
                 'transformparams': {
-                    'nullify': ['Cookie não definido']
+                	# Get rid of useless strings, replace text by NULL
+                    'Cookie não definido': None
                 },
             },
     
@@ -303,8 +302,48 @@ class GABradescoSegurosParcelasAtrasadasClicadasToDB(GABradescoSegurosToDB):
             # Outros
         
             {
+                'title': 'ramo',
+                'name': 'ga:dimension3',
+            },
+
+            {
+                'title': 'channel1',
+                'name': 'ga:dimension4',
+            },
+
+            {
+                'title': 'channel2',
+                'name': 'ga:dimension5',
+            },
+            
+            {
+                'title': 'product',
+                'name': 'ga:dimension14',
+            },
+            
+            {
+                'title': 'agency',
+                'name': 'ga:dimension26',
+            },
+            
+            {
+                'title': 'event_category',
+                'name': 'ga:eventCategory',
+            },
+            
+            {
+                'title': 'event_action',
+                'name': 'ga:eventAction',
+            },
+			{
                 'title': 'event',
                 'name': 'ga:eventLabel',
+                'transform': self.TransformRegexReplace, # (report, this_dimension)
+                'transformparams': {
+                	# Fix a wrong char that prevents data to be written on DB
+                    r'Pesquise por Ano e n.mero do Pedido': 'Pesquise por Ano e número do Pedido',
+					r'C.edito': 'Crédito'
+                },
             }
         ]
 
@@ -324,6 +363,7 @@ class GABradescoSegurosParcelasAtrasadasClicadasToDB(GABradescoSegurosToDB):
             apiQuota=apiQuota,
             metrics=metrics,
             dateRangePartitionSize=dateRangePartitionSize,  # in days
+			dbWritePartitions=dbWritePartitions,
             emptyRows=emptyRows,
             dbURL=dbURL,
             targetTable=targetTable,
@@ -355,6 +395,7 @@ class GABradescoSegurosCorretorVisitanteToDB(GABradescoSegurosToDB):
                         apiQuota=0,
                         metrics=None,
                         dateRangePartitionSize=None,  # in days
+						dbWritePartitions=None,
                         emptyRows=True,
                         dbURL=None,
                         targetTable=None,
@@ -373,48 +414,163 @@ class GABradescoSegurosCorretorVisitanteToDB(GABradescoSegurosToDB):
                 'sort': True,
                 'keeporiginal': True
             },
+            
+            
+            # Operational and data join
+            
+            {
+                'title': 'hit_id',
+                'name': 'ga:dimension22',
+                'key': True
+            },
     
+            {
+                'title': 'session_id',
+                'name': 'ga:dimension21',
+                'key': True
+            },
+
+            {
+                'title': 'client_id',
+                'name': 'ga:dimension23',
+                'key': True
+            },
+
+            {
+                'title': 'user_id',
+                'name': 'ga:dimension24',
+                'key': True
+            },
+
+            {
+                'title': 'sequence_id',
+                'name': 'ga:dimension25',
+                'key': True
+            },
 
     
-            # Dados do corretor
-    
+            # Business visitor features
+            
+            {
+                'title': 'corretor_cpd',
+                'name': 'ga:dimension13',
+                'type': 'int'
+            },
+
             {
                 'title': 'corretor_cpfcnpj_session_zeropad_sha256',
                 'name': 'ga:dimension20',
-                'transform': self.BSNullifyStrings, # (report, this_dimension)
+                'transform': self.TransformRegexReplace, # (report, this_dimension)
                 'transformparams': {
-                    'nullify': ['Cookie não definido']
+                	# Get rid of useless strings, replace text by NULL
+                    'Cookie não definido': None
                 },
             },
             {
                 'title': 'corretor_cpfcnpj_session_sha256',
                 'name': 'ga:dimension17',
-                'key': True,
-                'transform': self.BSNullifyStrings, # (report, this_dimension)
+                'transform': self.TransformRegexReplace, # (report, this_dimension)
                 'transformparams': {
-                    'nullify': ['Cookie não definido']
+                	# Get rid of useless strings, replace text by NULL
+                    'Cookie não definido': None
                 },
             },
             {
                 'title': 'corretor_cpfcnpj_hit_zeropad_sha256',
                 'name': 'ga:dimension19',
-                'transform': self.BSNullifyStrings, # (report, this_dimension)
+                'transform': self.TransformRegexReplace, # (report, this_dimension)
                 'transformparams': {
-                    'nullify': ['Cookie não definido']
+                	# Get rid of useless strings, replace text by NULL
+                    'Cookie não definido': None
                 },
             },
             {
                 'title': 'corretor_cpfcnpj_hit_sha256',
                 'name': 'ga:dimension15',
-                'transform': self.BSNullifyStrings, # (report, this_dimension)
+                'transform': self.TransformRegexReplace, # (report, this_dimension)
                 'transformparams': {
-                    'nullify': ['Cookie não definido']
+                	# Get rid of useless strings, replace text by NULL
+                    'Cookie não definido': None
                 },
             },
     
+            {
+                'title': 'corretor_perfil',
+                'name': 'ga:dimension6',
+            },
+            
     
-    
-            # Outros
+            # Content
+            
+            {
+                'title': 'page',
+                'name': 'ga:pagePath',
+            },
+            
+            {
+                'title': 'referer',
+                'name': 'ga:fullReferrer',
+                'transform': self.TransformRegexReplace, # (report, this_dimension)
+                'transformparams': {
+                	# Get rid of useless strings, replace text by NULL
+                    '(direct)': None
+                },
+            },
+
+            {
+                'title': 'site',
+                'name': 'ga:dimension2',
+            },
+
+            {
+                'title': 'ramo',
+                'name': 'ga:dimension3',
+            },
+
+            {
+                'title': 'channel1',
+                'name': 'ga:dimension4',
+            },
+
+            {
+                'title': 'channel2',
+                'name': 'ga:dimension5',
+            },
+            
+            {
+                'title': 'product',
+                'name': 'ga:dimension14',
+            },
+            
+            {
+                'title': 'agency',
+                'name': 'ga:dimension26',
+            },
+            
+            {
+                'title': 'event_category',
+                'name': 'ga:eventCategory',
+            },
+            
+            {
+                'title': 'event_action',
+                'name': 'ga:eventAction',
+            },
+            
+            {
+                'title': 'event_label',
+                'name': 'ga:eventLabel',
+                'transform': self.TransformRegexReplace, # (report, this_dimension)
+                'transformparams': {
+                	# Fix a wrong char that prevents data to be written on DB
+                    r'Pesquise por Ano e n.mero do Pedido': 'Pesquise por Ano e número do Pedido',
+					r'C.edito': 'Crédito'
+                },
+            },
+            
+
+
+            # Visitor technical features
     
             {
                 'title': 'browser',
@@ -426,29 +582,15 @@ class GABradescoSegurosCorretorVisitanteToDB(GABradescoSegurosToDB):
             {
                 'title': 'browser_version',
                 'name': 'ga:browserVersion',
-                'key': True
             },
 
             {
                 'title': 'browser_size',
                 'name': 'ga:browserSize',
-                'key': True
             },
             {
                 'title': 'screen_resolution',
                 'name': 'ga:screenResolution',
-                'key': True
-            },
-            {
-                'title': 'referer',
-                'name': 'ga:fullReferrer',
-                'key': True
-            },
-
-            {
-                'title': 'page',
-                'name': 'ga:pagePath',
-                'key': True
             },
         ]
 
@@ -468,6 +610,7 @@ class GABradescoSegurosCorretorVisitanteToDB(GABradescoSegurosToDB):
             apiQuota=apiQuota,
             metrics=metrics,
             dateRangePartitionSize=dateRangePartitionSize,  # in days
+			dbWritePartitions=dbWritePartitions,
             emptyRows=emptyRows,
             dbURL=dbURL,
             targetTable=targetTable,

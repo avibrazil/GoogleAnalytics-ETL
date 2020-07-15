@@ -1,0 +1,7 @@
+---
+- 0.6.0 - 2020-07-15:
+    Module now exports its version in __version__
+    More robust handling of GA API errors as timeout or broken pipe
+    Writes data in chunks to DB, configured by new class parameter dbWritePartitions
+    Consolidated many custom dimension transformation methods into one TransformRegexReplace()
+...

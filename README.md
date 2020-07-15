@@ -86,7 +86,8 @@ Database operations executed by GAAPItoDB are very simple. The target database i
 
 When data is ready to be written, INSERTS will be done efficiently by Panda's `to_sql` method using a SQLAlchemy connection. If target table doesn't exist, it will be created by `to_sql` with column types with optimal types.
 
-Indexes to speed up queries will not be created. Create them manually when you already have data in the table.
+Indexes to speed up queries will not be created. Create them manually when you already have data in the table, specially on the dimension/column that has `'synccursor': True`.
+
 
 Set correct database access permissions. We'll need SQL grants for `INSERT`, `SELECT`, `DROP TABLE` (if `incremental` is `False` or `restart` is `True`) and `CREATE TABLE` (on first run or if `restart` is `True`).
 
@@ -106,7 +107,9 @@ GA API will deliver no data if one single dimension has no data for that period.
 
 ### 8. Configure your dimensions for the class
 
-The `dimensions` class constructor needs to get a list of dimensions and their configurations. Such as:
+Not mandatory, but best practice is to create a subclass of `GAAPItoDB` with all your dimensions encapsulated and configured (see examples).
+
+The `dimensions` parameter on the class constructor needs to get a list of dimensions and their configurations. Such as:
 
 ```python
 dimensions = [

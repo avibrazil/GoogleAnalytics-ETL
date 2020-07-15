@@ -36,7 +36,7 @@ logging.getLogger().debug(datetime.datetime.now())
 
 # Set GA credentials file obtained from https://console.developers.google.com/apis/dashboard
 
-credentials='Portal de Negocios-abc123.json'
+credentials='Google credentials file-abc123.json'
 
 
 
@@ -75,6 +75,7 @@ credentials='Portal de Negocios-abc123.json'
 #   faster and require less API calls, but increase your chance of getting
 #   sampled (incomplete) data. Less days ensures complete data but makes more API calls
 #   and takes longer times to run.
+# - dbWritePartitions: Number of chunks to break data to write to DB.
 # - dbURL: A SQLAlchemy-supported URL including user, password, host and database name.
 # - targetTable: SQL table name that will be updated.
 # - incremental: If True (default) get data from GA and update SQL table starting from
@@ -91,9 +92,10 @@ gaParcelasClicadasTZ = GABradescoSegurosToDB.GABradescoSegurosParcelasAtrasadasC
     credentialsFile=credentials,
     apiQuota=100,
     start=datetime.datetime(2019,7,9),
-    end=datetime.datetime(2020,4,22,0,0,0),
+    end=datetime.datetime(2020,5,30),
     endLag=datetime.timedelta(minutes=0),
     dateRangePartitionSize=7,
+    dbWritePartitions=3,
     dbURL="mysql://user:password@host.com/database?charset=utf8mb4",
     targetTable='ga_parcelas_atrasadas_clicadas'
 )
@@ -104,9 +106,10 @@ gaParcelasClicadasUTC = GABradescoSegurosToDB.GABradescoSegurosParcelasAtrasadas
     gaProperty='UA-79999999-17',    
     credentialsFile=credentials,
     apiQuota=100,
-    start=datetime.datetime(2020,4,22),
+    start=datetime.datetime(2020,5,31),
     endLag=datetime.timedelta(minutes=120),
     dateRangePartitionSize=7,
+    dbWritePartitions=3,
     dbURL="mysql://user:password@host.com/database?charset=utf8mb4",
     targetTable='ga_parcelas_atrasadas_clicadas'
 )
@@ -128,9 +131,10 @@ gaCorretorVisitanteTZ=GABradescoSegurosToDB.GABradescoSegurosCorretorVisitanteTo
     credentialsFile=credentials,
     apiQuota=100,
     start=datetime.datetime(2020,3,1),
-    end=datetime.datetime(2020,4,22,0,0,0),
+    end=datetime.datetime(2020,5,30),
     endLag=datetime.timedelta(minutes=0),
     dateRangePartitionSize=2,
+    dbWritePartitions=12,
     dbURL="mysql://user:password@host.com/database?charset=utf8mb4",
     update=True,
     targetTable='ga_corretor_visitante'
@@ -143,9 +147,10 @@ gaCorretorVisitanteUTC=GABradescoSegurosToDB.GABradescoSegurosCorretorVisitanteT
     gaProperty='UA-79999999-17',    
     credentialsFile=credentials,
     apiQuota=100,
-    start=datetime.datetime(2020,4,22),
+    start=datetime.datetime(2020,5,31),
     endLag=datetime.timedelta(minutes=120),
-    dateRangePartitionSize=2,
+    dateRangePartitionSize=1,
+    dbWritePartitions=12,
     dbURL="mysql://user:password@host.com/database?charset=utf8mb4",
     update=True,
     targetTable='ga_corretor_visitante'

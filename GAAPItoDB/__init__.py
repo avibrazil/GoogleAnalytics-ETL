@@ -25,7 +25,9 @@ import json
 import queue
 import threading
 import gc # Garbage Collector
+import socket
 
+__version__ = '0.6.0'
 
 module_logger = logging.getLogger(__name__)
 
@@ -85,8 +87,6 @@ class GAAPItoDB(object):
         self.update=update
         self.apiQuota=apiQuota
 
-        self.start=start
-        self.end=end
         self.incremental=incremental
         self.endLag=endLag
         
@@ -105,6 +105,13 @@ class GAAPItoDB(object):
         else:
             # Lets discover timezone configured for this GA View
             self.gaTimezone=self.gaViewObject['timezone']
+
+        self.start = pd.Timestamp(start,tz=self.gaTimezone).to_pydatetime()
+        
+        self.end = end
+        if end:
+            self.end=pd.Timestamp(end,tz=self.gaTimezone).to_pydatetime()
+
 
         # Show some info about timezone, causae its an important subject
         t=pd.Timestamp.now()
@@ -377,8 +384,8 @@ class GAAPItoDB(object):
         for p in periods:
             ranges.append(
                 [
-                    p.start_time.to_pydatetime(),
-                    p.end_time.to_pydatetime()
+                    p.start_time.tz_localize(self.gaTimezone).to_pydatetime(warn=False),
+                    p.end_time.tz_localize(self.gaTimezone).to_pydatetime(warn=False)
                 ]
             )
         
@@ -415,20 +422,17 @@ class GAAPItoDB(object):
         
         # Some debug messages
         
-        self.logger.debug("GA call count since {}: {}".format(self.quotaControl['lastStart'], self.quotaControl['count']))
         self.logger.debug("Query for GA: {}".format(json.dumps(body)))
-        
-        
-        
-        # Finaly call Google Analytics API
-        
-        try:
-            report = self.ga.reports().batchGet(body=body, quotaUser=self.processor).execute()
-        except Exception as e:
-            self.logger.error("Unrecoverable error while calling GA: " + e)
-
-        
-        self.quotaControl['count']+=1
+                
+        # Finaly call Google Analytics API; retry ad infinitum if we get timeout exceptions.
+        while True:
+            try:
+                self.logger.debug("GA call count since {}: {}".format(self.quotaControl['lastStart'], self.quotaControl['count']))
+                self.quotaControl['count'] += 1
+                report = self.ga.reports().batchGet(body=body, quotaUser=self.processor).execute()
+                break
+            except Exception as e:
+                self.logger.warning("GA timed out, broken pipe or other error; retrying…")
 
         return report
 
@@ -456,6 +460,7 @@ class GAAPItoDB(object):
         
         subreports = self.subreportDimensions()
         timepartitions = self.getDateRangePartitions()
+        keys = self.getReportKeys()
 
         self.logger.debug(f'Subreport indexes: {subreports}')
         self.logger.debug(f'Time partitions to cover entire period requested: {timepartitions}')
@@ -518,8 +523,22 @@ class GAAPItoDB(object):
 
                 while cont:
                     # Iterate over subreport pages of about 100000 rows
+
+                    s = max(p[0],self.effectiveStart)
+                    e = min(p[1],self.end)
+
+                    self.logger.debug('Working on subreport for {focus}+{keys} ({pos} of {tot}), page {page}, time range of {start} ➔ {end}'.format(
+                            focus=list(set(dimTitles).difference(keys)),
+                            keys=keys,
+                            pos=i+1,
+                            tot=len(subreports),
+                            page=pageiteration,
+                            start=s,
+                            end=e
+                        )
+                    )
                     
-                    self.logger.debug("Working on subreport {} of {}: 【{}】 【{}】 【{}】…".format(i+1,len(subreports),timePartitionName,dimTitles,pageiteration))
+#                     self.logger.debug("Working on subreport {} of {}: 【{}】 【{}】 【{}】…".format(i+1,len(subreports),timePartitionName,dimTitles,pageiteration))
                     
                     if pageiteration>0:
                         query['pageToken'] = nextPageToken
@@ -529,7 +548,7 @@ class GAAPItoDB(object):
                         del report
                     except NameError:
                         pass
-                        
+                    
                     report = self.callGA(
                         body={
                             'reportRequests': [query],
@@ -565,7 +584,7 @@ class GAAPItoDB(object):
                         self.logger.debug("Subreport page size has {} rows.".format(len(report['reports'][0]['data']['rows'])))
 
                         if samplesReadCount:
-                            self.logger.debug("Sample space size: {}. Samples read: {}. Read {}% of sample space.".format(samplingSpaceSize,samplesReadCount,100*samplesReadCount/samplingSpaceSize))
+                            self.logger.warning("Sample space size: {}. Samples read: {}. Read {}% of sample space.".format(samplingSpaceSize,samplesReadCount,100*samplesReadCount/samplingSpaceSize))
                         else:
                             self.logger.debug("Data is complete and not sampled !")
 
@@ -589,7 +608,6 @@ class GAAPItoDB(object):
                 )
 
                 # Calculate a wanna-be-unique hash for each line based on key columns/dimensions
-                keys=self.getReportKeys()
                 self.subreports[-1] = GAAPItoDB.makePrimaryKey(self.subreports[-1],keys)
 
 
@@ -655,7 +673,7 @@ class GAAPItoDB(object):
 
                 # First Stage data conversion - operate over columns
 
-                self.logger.debug("Optimizing data on {} dimensions...".format(len(self.dimensions)))
+                self.logger.debug("Optimizing data types on {} dimensions...".format(len(self.dimensions)))
                 for d in self.dimensions:
                     if 'type' in d:
                         orgname=d['title']
@@ -673,7 +691,9 @@ class GAAPItoDB(object):
                             # Add GA View's time zone just to convert time to UTC right away
                             self.report[d['title']]=self.report[d['title']].apply(lambda x: x.tz_localize(self.gaTimezone).tz_convert(None))
 
-
+                buffer = io.StringIO()
+                self.report.info(verbose=True, buf=buffer)
+                self.logger.debug("Report memory profile after data type optimization:\n{}".format(buffer.getvalue()))
 
                 if self.report.shape[0]>0:
                     # Second Stage data conversion - operate over entire dataframe
@@ -765,14 +785,12 @@ class GAAPItoDB(object):
         
         If `restart` is True, ignore `incremental` and use `start` date.
         """
+        self.effectiveStart = self.start
         
         if self.restart:
             # Ignore lastest data in database and start over
-            self.effectiveStart=self.start
             self.lastSync = None
         else:
-            self.effectiveStart = self.start   # set a default
-
             if self.incremental:
                 # Effective start date is the last date of the `synccursor` column in DB, so find its value.
                 timeColName=None
@@ -923,8 +941,12 @@ class GAAPItoDB(object):
         self.writer = threading.Thread(target=self.databaseWriter)
         self.writer.start() # start the thread
         
-        # Start talking to GA and get report data
-        self.getReportData()
+        try:
+            # Start talking to GA and get report data
+            self.getReportData()
+        except Exception as e:
+            self.logger.exception('GA affairs failed.' + e)
+            os._exit(1)
 
         # Block until there is nothing on the queue
         if not self.dbWriteQueue.empty():

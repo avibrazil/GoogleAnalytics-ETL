@@ -1,14 +1,15 @@
 import setuptools
+from GAAPItoDB import __version__
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
     name="GoogleAnalyticsETL",
-    version="0.5.5",
+    version=__version__,
     author="Avi Alkalay",
     author_email="avibrazil@gmail.com",
-    description="Ingest a set of Google Analytics dimensions and put the data into a SQL database; can be run regularly to sync updates incrementally to DB",
+    description="Ingest a set of Google Analytics dimensions and put the data into a SQL table; can be run regularly to sync updates incrementally to DB",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/avibrazil/GoogleAnalytics-ETL",
