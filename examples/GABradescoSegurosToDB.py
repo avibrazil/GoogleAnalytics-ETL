@@ -518,6 +518,11 @@ class GABradescoSegurosCorretorVisitanteToDB(GABradescoSegurosToDB):
             },
 
             {
+                'title': 'pagename',
+                'name': 'ga:dimension1',
+            },
+            
+            {
                 'title': 'site',
                 'name': 'ga:dimension2',
             },
